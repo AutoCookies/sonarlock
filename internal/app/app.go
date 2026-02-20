@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"snapsync/internal/cli"
+	"snapsync/internal/discovery"
 	apperrors "snapsync/internal/errors"
 	"snapsync/internal/logging"
 )
@@ -24,7 +25,7 @@ func New(stdout, stderr io.Writer) *App {
 // Run executes SnapSync with the provided CLI args and returns a process exit code.
 func (a *App) Run(args []string) int {
 	logger := logging.New("info", a.stderr)
-	root := cli.RootCommand(a.stdout, os.Stdin)
+	root := cli.RootCommand(a.stdout, os.Stdin, discovery.NewMDNSResolver())
 
 	err := cli.Execute(root, args, a.stdout)
 	if err == nil {

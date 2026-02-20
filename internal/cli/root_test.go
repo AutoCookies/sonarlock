@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestRootCommandIncludesPhaseOneSubcommands(t *testing.T) {
-	root := RootCommand(&bytes.Buffer{}, strings.NewReader(""))
+func TestRootCommandIncludesPhaseTwoSubcommands(t *testing.T) {
+	root := RootCommand(&bytes.Buffer{}, strings.NewReader(""), nil)
 	if root == nil {
 		t.Fatal("expected root command")
 	}
@@ -16,7 +16,7 @@ func TestRootCommandIncludesPhaseOneSubcommands(t *testing.T) {
 	for _, sub := range root.Subcommands {
 		names[sub.Name] = true
 	}
-	for _, required := range []string{"version", "send", "recv"} {
+	for _, required := range []string{"version", "send", "recv", "list"} {
 		if !names[required] {
 			t.Fatalf("expected %q subcommand", required)
 		}
@@ -25,7 +25,7 @@ func TestRootCommandIncludesPhaseOneSubcommands(t *testing.T) {
 
 func TestExecuteHelpReturnsSuccess(t *testing.T) {
 	out := &bytes.Buffer{}
-	root := RootCommand(out, strings.NewReader(""))
+	root := RootCommand(out, strings.NewReader(""), nil)
 
 	err := Execute(root, []string{"--help"}, out)
 	if err != nil {

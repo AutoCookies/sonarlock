@@ -15,13 +15,14 @@ import (
 
 // ReceiveOptions controls receiver behavior.
 type ReceiveOptions struct {
-	Listen    string
-	OutDir    string
-	Overwrite bool
-	AcceptAll bool
-	JSON      bool
-	PromptIn  io.Reader
-	Out       io.Writer
+	Listen      string
+	OutDir      string
+	Overwrite   bool
+	AcceptAll   bool
+	JSON        bool
+	PromptIn    io.Reader
+	Out         io.Writer
+	OnListening func(addr net.Addr) (func(), error)
 }
 
 // ReceiveOnce accepts one connection and receives one file.
@@ -45,6 +46,18 @@ func ReceiveOnce(options ReceiveOptions) error {
 		return fmt.Errorf("listen on %q: %w: %w", options.Listen, err, apperrors.ErrNetwork)
 	}
 	defer func() { _ = listener.Close() }()
+
+	stopAdvertising := func() {}
+	if options.OnListening != nil {
+		stop, onListenErr := options.OnListening(listener.Addr())
+		if onListenErr != nil {
+			return fmt.Errorf("on listening callback: %w", onListenErr)
+		}
+		if stop != nil {
+			stopAdvertising = stop
+		}
+	}
+	defer stopAdvertising()
 
 	_, _ = fmt.Fprintf(options.Out, "listening on %s\n", listener.Addr().String())
 	conn, err := listener.Accept()

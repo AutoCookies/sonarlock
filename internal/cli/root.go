@@ -5,13 +5,14 @@ import (
 	"io"
 	"strings"
 
+	"snapsync/internal/discovery"
 	apperrors "snapsync/internal/errors"
 )
 
 // Runner executes a command with argv-style arguments.
 type Runner func(args []string) error
 
-// Command models a small CLI command tree for Phase 0.
+// Command models a small CLI command tree.
 type Command struct {
 	Name        string
 	Description string
@@ -20,15 +21,19 @@ type Command struct {
 }
 
 // RootCommand returns the SnapSync root command with its subcommands.
-func RootCommand(stdout io.Writer, stdin io.Reader) *Command {
+func RootCommand(stdout io.Writer, stdin io.Reader, resolver discovery.Resolver) *Command {
+	if resolver == nil {
+		resolver = discovery.NewMDNSResolver()
+	}
 	version := VersionCommand(stdout)
-	send := SendCommand(stdout)
+	send := SendCommand(stdout, resolver)
 	recv := RecvCommand(stdout, stdin)
+	list := ListCommand(stdout, resolver)
 
 	return &Command{
 		Name:        "snapsync",
 		Description: "SnapSync is a LAN file transfer tool.",
-		Subcommands: []*Command{version, send, recv},
+		Subcommands: []*Command{version, send, recv, list},
 	}
 }
 
@@ -48,20 +53,16 @@ func Execute(root *Command, args []string, stdout io.Writer) error {
 		if sub.Name != name {
 			continue
 		}
-
 		if sub.Run == nil {
 			return fmt.Errorf("command %q is not executable: %w", name, apperrors.ErrUsage)
 		}
-
 		if len(args) > 1 && isHelpArg(args[1]) {
 			printSubcommandHelp(root, sub, stdout)
 			return nil
 		}
-
 		if err := sub.Run(args[1:]); err != nil {
 			return fmt.Errorf("run command %q: %w", sub.Name, err)
 		}
-
 		return nil
 	}
 
