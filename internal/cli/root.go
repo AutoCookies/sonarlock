@@ -20,13 +20,15 @@ type Command struct {
 }
 
 // RootCommand returns the SnapSync root command with its subcommands.
-func RootCommand(versionOutput io.Writer) *Command {
-	version := VersionCommand(versionOutput)
+func RootCommand(stdout io.Writer, stdin io.Reader) *Command {
+	version := VersionCommand(stdout)
+	send := SendCommand(stdout)
+	recv := RecvCommand(stdout, stdin)
 
 	return &Command{
 		Name:        "snapsync",
-		Description: "SnapSync is a LAN file transfer tool (Phase 0 foundation).",
-		Subcommands: []*Command{version},
+		Description: "SnapSync is a LAN file transfer tool.",
+		Subcommands: []*Command{version, send, recv},
 	}
 }
 

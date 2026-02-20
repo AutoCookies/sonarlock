@@ -6,27 +6,26 @@ import (
 	"testing"
 )
 
-func TestRootCommandIncludesVersionSubcommand(t *testing.T) {
-	root := RootCommand(&bytes.Buffer{})
+func TestRootCommandIncludesPhaseOneSubcommands(t *testing.T) {
+	root := RootCommand(&bytes.Buffer{}, strings.NewReader(""))
 	if root == nil {
 		t.Fatal("expected root command")
 	}
 
-	found := false
+	names := map[string]bool{}
 	for _, sub := range root.Subcommands {
-		if sub.Name == "version" {
-			found = true
-			break
-		}
+		names[sub.Name] = true
 	}
-	if !found {
-		t.Fatal("expected version subcommand")
+	for _, required := range []string{"version", "send", "recv"} {
+		if !names[required] {
+			t.Fatalf("expected %q subcommand", required)
+		}
 	}
 }
 
 func TestExecuteHelpReturnsSuccess(t *testing.T) {
 	out := &bytes.Buffer{}
-	root := RootCommand(out)
+	root := RootCommand(out, strings.NewReader(""))
 
 	err := Execute(root, []string{"--help"}, out)
 	if err != nil {
