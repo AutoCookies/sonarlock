@@ -6,27 +6,43 @@ on:
 
 jobs:
   build-and-test:
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: true
 
-      - name: Build
-        run: cmake --build build --config Release
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.59.1
+          install-mode: binary
+          args: --version
 
-      - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Run unit tests
+        run: go test ./...
 
-      - name: Fake scenario smoke (Linux)
+      - name: Run race tests (Linux only)
         if: runner.os == 'Linux'
-        run: ./build/sonarlock analyze --backend fake --scenario human --duration 3 --action soft
+        run: go test -race ./...
 
-      - name: Fake scenario smoke (Windows)
-        if: runner.os == 'Windows'
-        run: .\build\Release\sonarlock.exe analyze --backend fake --scenario human --duration 3 --action soft
+      - name: Run lint
+        run: golangci-lint run
+
+      - name: Build snapsync
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          go build -ldflags "-X snapsync/internal/buildinfo.Version=${VERSION} -X snapsync/internal/buildinfo.Commit=${COMMIT} -X snapsync/internal/buildinfo.Date=${DATE}" ./cmd/snapsync
