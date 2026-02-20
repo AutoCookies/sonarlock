@@ -1,6 +1,6 @@
-# SonarLock v0.1.0-phase1
+# SonarLock
 
-Phase 1 provides a production-ready foundation for an Acoustic Radar Security prototype with clean module boundaries, deterministic testability, and a loopback session skeleton.
+Phase 2 adds coherent I/Q baseband processing, motion features, and a detection state machine.
 
 ## Build
 
@@ -11,35 +11,29 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-### Windows (PowerShell)
+### Windows
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022"
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-## CLI usage
+## CLI
 
-### List devices
 ```bash
 ./build/sonarlock devices --backend fake
-./build/sonarlock devices --backend real
+./build/sonarlock analyze --backend fake --scenario human
+./build/sonarlock analyze --backend fake --scenario static
+./build/sonarlock analyze --backend fake --scenario pet
+./build/sonarlock analyze --backend fake --scenario vibration
+./build/sonarlock analyze --backend fake --scenario human --csv out.csv
 ```
 
-### Run loopback session (fake backend)
-```bash
-./build/sonarlock run --backend fake --duration 5 --freq 19000 --samplerate 48000 --frames 256 --fake-input tone-noise
-```
+## CSV output
 
-### Run loopback session (real backend, PortAudio installed)
-```bash
-./build/sonarlock run --backend real --duration 5 --freq 19000 --samplerate 48000 --frames 256
-```
+Columns:
+`timestamp,state,score,confidence,baseband_energy,doppler_energy,phase_velocity,snr`
 
-If PortAudio is unavailable, the real backend exits gracefully with a clear error code/message.
+## Optional real backend
 
-## Notes
-- Default settings: 48 kHz, 256 frames, 5 seconds, 19 kHz tone.
-- `core/` is dependency-free business logic.
-- `audio/` implements fake + optional real backend.
-- `app/` provides CLI wiring.
+`--backend real` uses PortAudio if installed; otherwise the app exits gracefully with clear error codes.

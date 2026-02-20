@@ -45,7 +45,7 @@ core::Status PortAudioBackend::run_session(const core::AudioConfig& config, core
         std::size_t frame_offset;
         std::size_t total_frames;
         core::RuntimeMetrics metrics;
-    } ctx{&pipeline, 0, static_cast<std::size_t>(config.sample_rate_hz * config.duration_seconds), {}};
+    } ctx{&pipeline, 0, static_cast<std::size_t>(config.dsp.sample_rate_hz * config.dsp.duration_seconds), {}};
 
     pipeline.begin_session(config);
 
@@ -91,8 +91,8 @@ core::Status PortAudioBackend::run_session(const core::AudioConfig& config, core
         return (ctx->frame_offset >= ctx->total_frames) ? paComplete : paContinue;
     };
 
-    const PaError open_err = Pa_OpenStream(&stream, &in_params, &out_params, config.sample_rate_hz,
-                                           static_cast<unsigned long>(config.frames_per_buffer), paNoFlag, cb, &ctx);
+    const PaError open_err = Pa_OpenStream(&stream, &in_params, &out_params, config.dsp.sample_rate_hz,
+                                           static_cast<unsigned long>(config.dsp.frames_per_buffer), paNoFlag, cb, &ctx);
     if (open_err != paNoError) {
         Pa_Terminate();
         return core::Status::error(core::kErrStreamFailure, "failed to open PortAudio stream");

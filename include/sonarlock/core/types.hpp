@@ -3,33 +3,38 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
 
 namespace sonarlock::core {
 
-struct AudioConfig {
+enum class BackendKind { Real, Fake };
+enum class FakeScenario { Static, Human, Pet, Vibration };
+enum class SessionState { Idle, Running, Stopped, Error };
+enum class DetectionState { Idle, Observing, Triggered, Cooldown };
+
+struct DspConfig {
     double sample_rate_hz{48000.0};
     std::size_t frames_per_buffer{256};
     double duration_seconds{5.0};
-    double tone_frequency_hz{19000.0};
+    double f0_hz{19000.0};
+    double lp_cutoff_hz{500.0};
+    double doppler_band_low_hz{20.0};
+    double doppler_band_high_hz{200.0};
 };
 
-enum class BackendKind {
-    Real,
-    Fake,
+struct DetectionConfig {
+    double trigger_threshold{0.52};
+    double release_threshold{0.38};
+    std::uint32_t debounce_ms{300};
+    std::uint32_t cooldown_ms{3000};
 };
 
-enum class FakeInputMode {
-    Silence,
-    ToneWithNoise,
-};
-
-enum class SessionState {
-    Idle,
-    Running,
-    Stopped,
-    Error,
+struct AudioConfig {
+    DspConfig dsp{};
+    DetectionConfig detection{};
+    FakeScenario scenario{FakeScenario::Static};
+    std::uint32_t seed{7};
 };
 
 struct AudioDeviceInfo {
@@ -38,6 +43,20 @@ struct AudioDeviceInfo {
     int max_input_channels{0};
     int max_output_channels{0};
     double default_sample_rate{0.0};
+};
+
+struct MotionFeatures {
+    double baseband_energy{0.0};
+    double doppler_band_energy{0.0};
+    double phase_velocity{0.0};
+    double snr_estimate{0.0};
+};
+
+struct MotionEvent {
+    DetectionState state{DetectionState::Idle};
+    double score{0.0};
+    double confidence{0.0};
+    double timestamp_sec{0.0};
 };
 
 struct RuntimeMetrics {
@@ -49,12 +68,15 @@ struct RuntimeMetrics {
     std::uint64_t xruns{0};
     std::uint64_t callbacks{0};
     std::uint64_t frames_processed{0};
+
+    MotionFeatures features{};
+    MotionEvent latest_event{};
+    std::uint64_t triggered_count{0};
 };
 
 struct Status {
     int code{0};
     std::string message;
-
     [[nodiscard]] bool ok() const { return code == 0; }
     static Status success() { return {}; }
     static Status error(int c, std::string msg) { return Status{c, std::move(msg)}; }

@@ -1,0 +1,53 @@
+#include "sonarlock/core/motion_detection.hpp"
+
+#include <algorithm>
+#include <cmath>
+
+namespace sonarlock::core {
+
+double DefaultMotionScorer::score(const MotionFeatures& f) const {
+    const double e = std::min(1.0, f.doppler_band_energy * 20.0);
+    const double ratio = std::min(1.0, f.doppler_band_energy / (f.baseband_energy + 1e-6));
+    const double pv = std::min(1.0, std::abs(f.phase_velocity) / 80.0);
+    const double snr = std::min(1.0, std::max(0.0, f.snr_estimate) / 20.0);
+    return 0.45 * e + 0.25 * ratio + 0.20 * pv + 0.10 * snr;
+}
+
+DetectionStateMachine::DetectionStateMachine(DetectionConfig config) : config_(config) {}
+
+MotionEvent DetectionStateMachine::update(double score, double confidence, double timestamp_sec) {
+    if (state_ == DetectionState::Cooldown && timestamp_sec >= cooldown_until_sec_) {
+        state_ = DetectionState::Idle;
+    }
+
+    if (state_ == DetectionState::Idle) {
+        if (score >= config_.release_threshold) {
+            state_ = DetectionState::Observing;
+            observe_since_sec_ = timestamp_sec;
+        }
+    } else if (state_ == DetectionState::Observing) {
+        if (score < config_.release_threshold) {
+            state_ = DetectionState::Idle;
+            observe_since_sec_ = -1.0;
+        } else if (score >= config_.trigger_threshold &&
+                   (timestamp_sec - observe_since_sec_) * 1000.0 >= static_cast<double>(config_.debounce_ms)) {
+            state_ = DetectionState::Triggered;
+        }
+    } else if (state_ == DetectionState::Triggered) {
+        state_ = DetectionState::Cooldown;
+        cooldown_until_sec_ = timestamp_sec + static_cast<double>(config_.cooldown_ms) / 1000.0;
+    }
+
+    return MotionEvent{state_, score, confidence, timestamp_sec};
+}
+
+MotionDetector::MotionDetector(DetectionConfig config, std::unique_ptr<IMotionScorer> scorer)
+    : config_(config), scorer_(std::move(scorer)), fsm_(config) {}
+
+MotionEvent MotionDetector::evaluate(const MotionFeatures& features, double timestamp_sec) {
+    const double score = scorer_->score(features);
+    const double confidence = std::clamp(score, 0.0, 1.0);
+    return fsm_.update(score, confidence, timestamp_sec);
+}
+
+} // namespace sonarlock::core

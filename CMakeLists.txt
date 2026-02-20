@@ -12,6 +12,8 @@ add_library(sonarlock_core
     src/core/logger.cpp
     src/core/sine_generator.cpp
     src/core/dsp_pipeline.cpp
+    src/core/dsp_primitives.cpp
+    src/core/motion_detection.cpp
     src/core/session_controller.cpp
 )
 target_include_directories(sonarlock_core PUBLIC include)

@@ -7,7 +7,7 @@
 
 namespace sonarlock::audio {
 
-std::unique_ptr<core::IAudioBackend> make_backend(core::BackendKind kind, core::FakeInputMode fake_mode,
+std::unique_ptr<core::IAudioBackend> make_backend(core::BackendKind kind, core::FakeScenario scenario,
                                                   std::uint32_t seed = 7);
 
 } // namespace sonarlock::audio

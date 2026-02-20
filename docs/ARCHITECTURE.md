@@ -1,52 +1,47 @@
-# Architecture (Phase 1)
+# Architecture (Phase 2)
 
-## Module boundaries
+Phase 2 keeps the same layering: `app -> (audio, core)` and `audio -> core`; `core` has no OS/audio dependencies.
 
-- **core/**
-  - Pure logic and contracts (`IAudioBackend`, `IDspPipeline`, `SessionController`, `SineGenerator`).
-  - No OS/audio library dependency.
-- **audio/**
-  - Backend implementations.
-  - `FakeAudioBackend` for deterministic CI-safe tests.
-  - `PortAudioBackend` for best-effort device enumeration + stream run.
-- **app/**
-  - CLI argument parsing and runtime orchestration.
+## Signal flow
 
-Dependency direction is one-way toward `core`: backend and application logic both consume core contracts.
+```mermaid
+flowchart LR
+  RX[Mic/RX samples] --> MIX[DownMixerIQ (NCO @ f0)]
+  MIX --> LP[IIR Low-pass 500 Hz]
+  LP --> FEAT[MotionFeatures\nbaseband energy\ndoppler band energy\nphase velocity\nSNR]
+  FEAT --> SCORE[IMotionScorer strategy]
+  SCORE --> FSM[DetectionStateMachine\nIDLE->OBSERVING->TRIGGERED->COOLDOWN]
+  FSM --> EVT[MotionEvent output]
+  TX[TX sine @ f0] --> SPK[Speaker/TX output]
+```
 
-## Key interfaces
+## DSP choices
 
-- `IAudioBackend`
-  - `enumerate_devices()`
-  - `run_session(config, pipeline, out_metrics)`
-- `IDspPipeline`
-  - `begin_session(config)`
-  - `process(input, output, frame_offset)`
-  - `metrics()`
+- Numeric type: `double` for DSP internals, `float` for audio sample buffers.
+- I/Q coherent demodulation centered at `f0` via continuous-phase NCO.
+- Low-pass filter: **first-order IIR**.
+  - Chosen for deterministic, stateful streaming behavior, tiny CPU cost, and stable cross-platform performance.
+- Doppler band proxy (20-200 Hz): LP-based high-pass (`x - LP20(x)`) followed by LP200.
+- Phase tracking: `atan2(Q,I)` + unwrap with ±π continuity correction.
 
-## Session lifecycle state
+Why baseband I/Q over “FFT at 20k”:
+- Doppler motion is low-frequency modulation around carrier; coherent down-mixing extracts that directly.
+- Lower computational cost and better frame-to-frame temporal continuity than repeated FFT bins at ultrasonic carrier.
 
-`SessionController` enforces explicit state transitions:
+## Defaults
 
-`Idle -> Running -> Stopped|Error`
+- sample rate: 48000 Hz
+- frames: 256
+- duration: 5 s
+- f0: 19000 Hz
+- lp cutoff: 500 Hz
+- doppler band: 20-200 Hz
+- trigger threshold: 0.52
+- release threshold: 0.38
+- debounce: 300 ms
+- cooldown: 3000 ms
 
-## DSP pipeline (Phase 1)
+## Extension boundary for Phase 3+
 
-`BasicDspPipeline`:
-- Generates TX sine tone with continuous phase.
-- Applies fade-in/out envelope (20 ms) to reduce clicks.
-- Computes RX metrics from input stream:
-  - RMS
-  - Peak
-  - DC offset
-
-Hooks for later phases are intentionally kept as extension points in `IDspPipeline` and `BasicDspPipeline` internals.
-
-## Phase 2 extension plan
-
-Future changes should extend `IDspPipeline` implementation only (not backend contracts):
-- I/Q down-mix stage
-- Band-pass / low-pass filtering chain
-- Decision state machine for threat/gesture semantics
-
-This keeps hardware backends stable while evolving DSP and decision logic.
+- Swap/augment `IMotionScorer` strategies without backend changes.
+- Add richer filtering/policies while preserving existing `IDspPipeline` and `IAudioBackend` contracts.

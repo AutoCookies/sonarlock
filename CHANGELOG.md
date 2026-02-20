@@ -1,11 +1,10 @@
 # Changelog
 
-## v0.1.0-phase1
-- Established C++20/CMake target-based architecture with `core`, `audio`, and `app` modules.
-- Added `IAudioBackend` and `IDspPipeline` contracts with explicit session lifecycle control.
-- Implemented `BasicDspPipeline` with 19 kHz sine generation, phase continuity, fade envelope, and RMS/peak/DC metrics.
-- Implemented `FakeAudioBackend` for deterministic hardware-free testing.
-- Implemented optional `PortAudioBackend` (best-effort enumeration + run), gracefully unavailable when dependency is missing.
-- Added CLI commands: `devices`, `run` with runtime metrics logging.
-- Added CI workflow for Linux and Windows configure/build/test.
-- Added deterministic unit tests for DSP, fake backend session behavior, and CLI parsing.
+## v0.2.0-phase2
+- Added coherent I/Q down-mix pipeline with persistent NCO phase.
+- Added deterministic first-order IIR low-pass stages for baseband and Doppler-band proxy extraction.
+- Added phase tracking with unwrap, motion features (baseband energy, doppler band energy, phase velocity, SNR), and motion scoring strategy.
+- Added detection state machine: IDLE -> OBSERVING -> TRIGGERED -> COOLDOWN.
+- Added `analyze` CLI mode with DSP/detector configuration flags and optional CSV output.
+- Upgraded fake backend with deterministic scenarios: static, human, pet, vibration.
+- Expanded deterministic test harness with DSP, detector, integration, and CLI parsing coverage.
