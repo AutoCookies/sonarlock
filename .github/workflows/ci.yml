@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Fake scenario smoke (Linux)
+        if: runner.os == 'Linux'
+        run: ./build/sonarlock analyze --backend fake --scenario human --duration 3 --action soft
+
+      - name: Fake scenario smoke (Windows)
+        if: runner.os == 'Windows'
+        run: .\build\Release\sonarlock.exe analyze --backend fake --scenario human --duration 3 --action soft
