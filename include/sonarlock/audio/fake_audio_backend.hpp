@@ -10,7 +10,7 @@ class FakeAudioBackend final : public core::IAudioBackend {
 
     [[nodiscard]] std::vector<core::AudioDeviceInfo> enumerate_devices() const override;
     core::Status run_session(const core::AudioConfig& config, core::IDspPipeline& pipeline,
-                             core::RuntimeMetrics& out_metrics) override;
+                             core::RuntimeMetrics& out_metrics, const std::function<bool()>& should_stop) override;
 
   private:
     core::FakeScenario scenario_;

@@ -1,11 +1,15 @@
 #pragma once
 
+#include "sonarlock/core/action_policy.hpp"
+#include "sonarlock/core/calibration.hpp"
+#include "sonarlock/core/event_journal.hpp"
 #include "sonarlock/core/motion_detection.hpp"
 #include "sonarlock/core/types.hpp"
 
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace sonarlock::core {
@@ -31,6 +35,7 @@ class BasicDspPipeline final : public IDspPipeline {
     void begin_session(const AudioConfig& config) override;
     void process(std::span<const float> input, std::span<float> output, std::size_t frame_offset) override;
     [[nodiscard]] RuntimeMetrics metrics() const override;
+    [[nodiscard]] std::string dump_events_json(std::size_t n) const;
 
   private:
     AudioConfig config_{};
@@ -48,10 +53,16 @@ class BasicDspPipeline final : public IDspPipeline {
     std::unique_ptr<IirLowPass> q_band_lp_;
     std::unique_ptr<PhaseTracker> phase_tracker_;
     std::unique_ptr<MotionDetector> detector_;
+    std::unique_ptr<CalibrationController> calibration_;
+    std::unique_ptr<IActionPolicy> action_policy_;
+    std::unique_ptr<ActionSafetyController> safety_;
+    EventJournal journal_{200};
 
     double signal_ema_{1e-6};
     double noise_ema_{1e-6};
     double phase_velocity_ema_{0.0};
+    double prev_input_{0.0};
+    bool has_prev_input_{false};
 };
 
 } // namespace sonarlock::core

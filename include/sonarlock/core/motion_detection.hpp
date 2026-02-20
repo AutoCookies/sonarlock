@@ -19,11 +19,12 @@ class DefaultMotionScorer final : public IMotionScorer {
 
 class DetectionStateMachine {
   public:
-    explicit DetectionStateMachine(DetectionConfig config);
-    MotionEvent update(double score, double confidence, double timestamp_sec);
+    explicit DetectionStateMachine(DetectionSection config);
+    MotionEvent update(double score, double confidence, double timestamp_sec, CalibrationState cal_state);
+    void set_config(DetectionSection config);
 
   private:
-    DetectionConfig config_;
+    DetectionSection config_;
     DetectionState state_{DetectionState::Idle};
     double observe_since_sec_{-1.0};
     double cooldown_until_sec_{0.0};
@@ -31,11 +32,12 @@ class DetectionStateMachine {
 
 class MotionDetector {
   public:
-    MotionDetector(DetectionConfig config, std::unique_ptr<IMotionScorer> scorer);
-    MotionEvent evaluate(const MotionFeatures& features, double timestamp_sec);
+    MotionDetector(DetectionSection config, std::unique_ptr<IMotionScorer> scorer);
+    MotionEvent evaluate(const MotionFeatures& features, double timestamp_sec, CalibrationState cal_state);
+    void set_detection_config(DetectionSection config);
 
   private:
-    DetectionConfig config_;
+    DetectionSection config_;
     std::unique_ptr<IMotionScorer> scorer_;
     DetectionStateMachine fsm_;
 };

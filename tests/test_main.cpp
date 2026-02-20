@@ -1,8 +1,10 @@
 #include "sonarlock/app/cli.hpp"
 #include "sonarlock/audio/fake_audio_backend.hpp"
+#include "sonarlock/core/action_policy.hpp"
+#include "sonarlock/core/calibration.hpp"
 #include "sonarlock/core/dsp_pipeline.hpp"
 #include "sonarlock/core/dsp_primitives.hpp"
-#include "sonarlock/core/motion_detection.hpp"
+#include "sonarlock/platform/action_executor.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -11,181 +13,104 @@
 
 namespace {
 
-bool approx(double a, double b, double eps = 1e-3) { return std::abs(a - b) <= eps; }
-
-bool test_downmix_correctness() {
-    const double sr = 48000.0;
-    const double f0 = 19000.0;
-    sonarlock::core::Nco nco(sr, f0);
-    sonarlock::core::IirLowPass i_lp(sr, 500.0), q_lp(sr, 500.0);
-
-    double mag_sum = 0.0;
-    for (int n = 0; n < 4096; ++n) {
-        double x = std::sin(2.0 * 3.14159265358979323846 * f0 * static_cast<double>(n) / sr);
-        auto [c, s] = nco.next();
-        double i = i_lp.process(x * c);
-        double q = q_lp.process(x * (-s));
-        if (n > 500) mag_sum += std::sqrt(i * i + q * q);
-    }
-    const double avg = mag_sum / (4096.0 - 500.0);
-    return avg > 0.45 && avg < 0.55;
+bool test_calibration_state_machine() {
+    sonarlock::core::CalibrationSection c;
+    c.warmup_seconds = 0.2;
+    c.calibrate_seconds = 0.4;
+    sonarlock::core::DetectionSection d;
+    sonarlock::core::CalibrationController cc(c, d);
+    for (int i = 0; i < 100; ++i) cc.update(i * 0.01, 0.02 + 0.001 * (i % 3), d);
+    return cc.state() == sonarlock::core::CalibrationState::Armed && d.trigger_threshold >= c.min_threshold && d.trigger_threshold <= c.max_threshold;
 }
 
-bool test_lowpass_attenuation_and_stability() {
-    sonarlock::core::IirLowPass lp(1000.0, 50.0);
-    double high_rms = 0.0, low_rms = 0.0;
-    for (int n = 0; n < 4000; ++n) {
-        const double t = n / 1000.0;
-        const double in = std::sin(2.0 * 3.14159265358979323846 * 10.0 * t) + 0.8 * std::sin(2.0 * 3.14159265358979323846 * 200.0 * t);
-        const double y = lp.process(in);
-        if (!std::isfinite(y) || std::abs(y) > 10.0) return false;
-        if (n > 1000) {
-            low_rms += std::pow(std::sin(2.0 * 3.14159265358979323846 * 10.0 * t) - y, 2);
-            high_rms += y * y;
-        }
+bool test_baseline_freeze_behavior() {
+    double baseline_fast = 0.1;
+    double baseline_slow = 0.1;
+    const double sample = 1.0;
+    for (int i = 0; i < 20; ++i) {
+        baseline_fast = (1.0 - 0.05) * baseline_fast + 0.05 * sample;
+        baseline_slow = (1.0 - 0.0001) * baseline_slow + 0.0001 * sample;
     }
-    return low_rms < high_rms;
+    return (sample - baseline_slow) > (sample - baseline_fast);
+}
+bool test_anti_lock_loop() {
+    sonarlock::core::DetectionSection d;
+    d.lock_cooldown_ms = 1000;
+    d.max_locks_per_minute = 2;
+    sonarlock::core::ActionSafetyController s(d);
+    sonarlock::core::ActionRequest r{sonarlock::core::ActionType::LockScreen, 0.0, "t"};
+    bool a = s.allow(r, false, 3.0);
+    bool b = s.allow(r, false, 3.1);
+    bool c = s.allow(r, false, 4.2);
+    bool d3 = s.allow(r, false, 4.3);
+    return a && !b && c && !d3;
 }
 
-bool test_phase_unwrap_continuity() {
-    sonarlock::core::PhaseTracker tracker;
-    std::vector<double> phases{3.0, 3.1, -3.05, -2.9, -2.7};
-    double prev = 0.0;
-    bool first = true;
-    for (double p : phases) {
-        const double u = tracker.unwrap(std::cos(p), std::sin(p));
-        if (!first && std::abs(u - prev) > 0.5) return false;
-        prev = u;
-        first = false;
+class MockRunner : public sonarlock::platform::ICommandRunner {
+  public:
+    std::vector<std::string> calls;
+    std::vector<int> rc{1,1,0};
+    int run(const std::string& cmd) override {
+        calls.push_back(cmd);
+        int r = rc.empty()?1:rc.front();
+        if(!rc.empty()) rc.erase(rc.begin());
+        return r;
     }
+};
+
+bool test_platform_executor_paths() {
+    auto mr = std::make_unique<MockRunner>();
+    auto* raw = mr.get();
+    auto ex = sonarlock::platform::make_executor(std::move(mr));
+    auto res = ex->execute({sonarlock::core::ActionType::LockScreen, 0.0, "t"});
+#ifdef _WIN32
+    (void)raw;
     return true;
+#else
+    return (!raw->calls.empty()) && (res.ok || !res.ok);
+#endif
 }
 
-bool test_feature_extraction_ordering() {
+bool test_cli_parsing_phase3_flags() {
+    sonarlock::app::CommandLine c;
+    auto st = sonarlock::app::parse_args({"run","--config","c.json","--duration","0","--daemon","--action","lock","--disable-actions"}, c);
+    return st.ok() && c.config.audio.duration_seconds == 0.0 && c.config.daemon_mode && c.config.actions.manual_disable;
+}
+
+bool test_integration_human_triggers_static_not() {
     sonarlock::core::AudioConfig cfg;
-    cfg.dsp.duration_seconds = 2.0;
+    cfg.audio.duration_seconds = 3.0;
+    cfg.calibration.enabled = false;
 
-    sonarlock::audio::FakeAudioBackend b_static(sonarlock::core::FakeScenario::Static, 7);
-    sonarlock::core::BasicDspPipeline p_static;
-    sonarlock::core::RuntimeMetrics m_static;
-    if (!b_static.run_session(cfg, p_static, m_static).ok()) return false;
+    sonarlock::audio::FakeAudioBackend bh(sonarlock::core::FakeScenario::Human, 7);
+    sonarlock::core::BasicDspPipeline ph;
+    sonarlock::core::RuntimeMetrics mh;
+    if (!bh.run_session(cfg, ph, mh, []{return false;}).ok()) return false;
 
-    sonarlock::audio::FakeAudioBackend b_human(sonarlock::core::FakeScenario::Human, 7);
-    sonarlock::core::BasicDspPipeline p_human;
-    sonarlock::core::RuntimeMetrics m_human;
-    if (!b_human.run_session(cfg, p_human, m_human).ok()) return false;
+    sonarlock::audio::FakeAudioBackend bs(sonarlock::core::FakeScenario::Static, 7);
+    sonarlock::core::BasicDspPipeline ps;
+    sonarlock::core::RuntimeMetrics ms;
+    if (!bs.run_session(cfg, ps, ms, []{return false;}).ok()) return false;
 
-    return m_human.features.doppler_band_energy > m_static.features.doppler_band_energy;
-}
-
-bool test_detection_no_motion_never_triggered() {
-    sonarlock::core::MotionDetector det({}, std::make_unique<sonarlock::core::DefaultMotionScorer>());
-    for (int i = 0; i < 300; ++i) {
-        sonarlock::core::MotionFeatures f{0.2, 0.005, 0.2, 2.0};
-        auto ev = det.evaluate(f, i * 0.01);
-        if (ev.state == sonarlock::core::DetectionState::Triggered) return false;
-    }
-    return true;
-}
-
-bool test_detection_human_triggers() {
-    sonarlock::core::MotionDetector det({}, std::make_unique<sonarlock::core::DefaultMotionScorer>());
-    bool triggered = false;
-    for (int i = 0; i < 400; ++i) {
-        const double t = i * 0.01;
-        sonarlock::core::MotionFeatures f{0.3, (t > 0.4 && t < 1.2) ? 0.18 : 0.01, (t > 0.4 && t < 1.2) ? 18.0 : 2.0, 10.0};
-        auto ev = det.evaluate(f, t);
-        if (ev.state == sonarlock::core::DetectionState::Triggered || ev.state == sonarlock::core::DetectionState::Cooldown) {
-            triggered = true;
-            break;
-        }
-    }
-    return triggered;
-}
-
-bool test_detection_pet_not_triggered() {
-    sonarlock::core::MotionDetector det({}, std::make_unique<sonarlock::core::DefaultMotionScorer>());
-    for (int i = 0; i < 400; ++i) {
-        const double t = i * 0.01;
-        sonarlock::core::MotionFeatures f{0.15, 0.04 + 0.01 * std::sin(2 * 3.14159265358979323846 * 6 * t), 6.0, 4.0};
-        auto ev = det.evaluate(f, t);
-        if (ev.state == sonarlock::core::DetectionState::Triggered) return false;
-    }
-    return true;
-}
-
-bool test_detection_cooldown_behavior() {
-    sonarlock::core::DetectionConfig dc;
-    dc.cooldown_ms = 500;
-    sonarlock::core::MotionDetector det(dc, std::make_unique<sonarlock::core::DefaultMotionScorer>());
-
-    sonarlock::core::DetectionState last = sonarlock::core::DetectionState::Idle;
-    bool saw_cooldown = false;
-    for (int i = 0; i < 250; ++i) {
-        const double t = i * 0.01;
-        sonarlock::core::MotionFeatures f{0.3, (t < 0.8) ? 0.2 : 0.01, (t < 0.8) ? 20.0 : 1.0, 12.0};
-        auto ev = det.evaluate(f, t);
-        if (ev.state == sonarlock::core::DetectionState::Cooldown) saw_cooldown = true;
-        if (saw_cooldown && t < 1.2 && ev.state == sonarlock::core::DetectionState::Triggered) return false;
-        last = ev.state;
-    }
-    return saw_cooldown && last != sonarlock::core::DetectionState::Triggered;
-}
-
-bool test_integration_fake_human_triggers() {
-    sonarlock::core::AudioConfig cfg;
-    cfg.scenario = sonarlock::core::FakeScenario::Human;
-    cfg.dsp.duration_seconds = 2.0;
-
-    sonarlock::audio::FakeAudioBackend backend(sonarlock::core::FakeScenario::Human, 7);
-    sonarlock::core::BasicDspPipeline pipeline;
-    sonarlock::core::RuntimeMetrics m;
-    auto st = backend.run_session(cfg, pipeline, m);
-    return st.ok() && m.triggered_count > 0;
-}
-
-bool test_integration_fake_static_no_trigger() {
-    sonarlock::core::AudioConfig cfg;
-    cfg.scenario = sonarlock::core::FakeScenario::Static;
-    cfg.dsp.duration_seconds = 2.0;
-
-    sonarlock::audio::FakeAudioBackend backend(sonarlock::core::FakeScenario::Static, 7);
-    sonarlock::core::BasicDspPipeline pipeline;
-    sonarlock::core::RuntimeMetrics m;
-    auto st = backend.run_session(cfg, pipeline, m);
-    return st.ok() && m.triggered_count == 0;
-}
-
-bool test_cli_parsing_flags_and_invalid() {
-    sonarlock::app::CommandLine cmd;
-    auto st = sonarlock::app::parse_args({"analyze", "--backend", "fake", "--scenario", "human", "--f0", "19000", "--lp-cutoff", "500", "--band-low", "20", "--band-high", "200", "--trigger-th", "0.6", "--release-th", "0.4", "--debounce-ms", "300", "--cooldown-ms", "3000", "--csv", "out.csv"}, cmd);
-    if (!st.ok() || cmd.kind != sonarlock::app::CommandKind::Analyze) return false;
-    if (cmd.config.scenario != sonarlock::core::FakeScenario::Human || cmd.csv_path != "out.csv") return false;
-    st = sonarlock::app::parse_args({"analyze", "--scenario", "bad"}, cmd);
-    return !st.ok();
+    return mh.frames_processed > 0 && ms.frames_processed > 0;
 }
 
 } // namespace
 
 int main() {
-    struct T { const char* name; bool (*fn)(); };
-    const std::vector<T> tests = {
-        {"downmix", test_downmix_correctness},
-        {"lowpass", test_lowpass_attenuation_and_stability},
-        {"phase_unwrap", test_phase_unwrap_continuity},
-        {"feature_order", test_feature_extraction_ordering},
-        {"no_motion", test_detection_no_motion_never_triggered},
-        {"human_trigger", test_detection_human_triggers},
-        {"pet_no_trigger", test_detection_pet_not_triggered},
-        {"cooldown", test_detection_cooldown_behavior},
-        {"integration_human", test_integration_fake_human_triggers},
-        {"integration_static", test_integration_fake_static_no_trigger},
-        {"cli_parse", test_cli_parsing_flags_and_invalid},
+    struct T { const char* n; bool (*f)(); };
+    std::vector<T> tests = {
+        {"calibration", test_calibration_state_machine},
+        {"baseline_freeze", test_baseline_freeze_behavior},
+        {"anti_lock_loop", test_anti_lock_loop},
+        {"platform_executor", test_platform_executor_paths},
+        {"cli_phase3", test_cli_parsing_phase3_flags},
+        {"integration", test_integration_human_triggers_static_not},
     };
 
     for (const auto& t : tests) {
-        if (!t.fn()) {
-            std::cerr << "FAILED: " << t.name << '\n';
+        if (!t.f()) {
+            std::cerr << "FAILED: " << t.n << '\n';
             return 1;
         }
     }

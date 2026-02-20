@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(sonarlock VERSION 0.1.0 LANGUAGES CXX)
+project(sonarlock VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,9 @@ add_library(sonarlock_core
     src/core/dsp_pipeline.cpp
     src/core/dsp_primitives.cpp
     src/core/motion_detection.cpp
+    src/core/calibration.cpp
+    src/core/event_journal.cpp
+    src/core/action_policy.cpp
     src/core/session_controller.cpp
 )
 target_include_directories(sonarlock_core PUBLIC include)
@@ -41,18 +44,20 @@ else()
     target_sources(sonarlock_audio PRIVATE src/audio/portaudio_backend.cpp)
 endif()
 
-add_library(sonarlock_app
-    src/app/cli_parser.cpp
-)
+add_library(sonarlock_platform src/platform/action_executor.cpp)
+target_include_directories(sonarlock_platform PUBLIC include)
+target_link_libraries(sonarlock_platform PUBLIC sonarlock_core)
+
+add_library(sonarlock_app src/app/cli_parser.cpp)
 target_include_directories(sonarlock_app PUBLIC include)
 target_link_libraries(sonarlock_app PUBLIC sonarlock_core)
 
 add_executable(sonarlock src/app/main.cpp)
-target_link_libraries(sonarlock PRIVATE sonarlock_app sonarlock_core sonarlock_audio)
+target_link_libraries(sonarlock PRIVATE sonarlock_app sonarlock_core sonarlock_audio sonarlock_platform)
 
 include(CTest)
 if(SONARLOCK_BUILD_TESTS AND BUILD_TESTING)
     add_executable(sonarlock_tests tests/test_main.cpp)
-    target_link_libraries(sonarlock_tests PRIVATE sonarlock_app sonarlock_core sonarlock_audio)
+    target_link_libraries(sonarlock_tests PRIVATE sonarlock_app sonarlock_core sonarlock_audio sonarlock_platform)
     add_test(NAME sonarlock_tests COMMAND sonarlock_tests)
 endif()

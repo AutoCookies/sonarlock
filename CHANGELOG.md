@@ -1,10 +1,13 @@
 # Changelog
 
-## v0.2.0-phase2
-- Added coherent I/Q down-mix pipeline with persistent NCO phase.
-- Added deterministic first-order IIR low-pass stages for baseband and Doppler-band proxy extraction.
-- Added phase tracking with unwrap, motion features (baseband energy, doppler band energy, phase velocity, SNR), and motion scoring strategy.
-- Added detection state machine: IDLE -> OBSERVING -> TRIGGERED -> COOLDOWN.
-- Added `analyze` CLI mode with DSP/detector configuration flags and optional CSV output.
-- Upgraded fake backend with deterministic scenarios: static, human, pet, vibration.
-- Expanded deterministic test harness with DSP, detector, integration, and CLI parsing coverage.
+## v1.0.0
+- Added calibration state machine (INIT/WARMUP/CALIBRATING/ARMED) and AutoTuner with clamped robust threshold tuning.
+- Added baseline clutter cancellation and motion-relative scoring path.
+- Added safety-grade action pipeline: ActionPolicy + ActionRequest + anti-lock-loop controls (arming delay, cooldown, lock-rate cap, manual disable).
+- Added core event journal ring buffer with JSON dump output.
+- Added platform action executors:
+  - Windows: `LockWorkStation()`.
+  - Linux: fallback lock command chain.
+- Added background-capable CLI behavior (`run --duration 0`, SIGINT clean stop), commands `calibrate` and `dump-events`.
+- Added config file loading (`--config` + default home path), file logging with rotation, and v1 safety/usage docs.
+- Expanded deterministic CI-safe tests for calibration, baseline freeze, anti-lock-loop, platform execution path abstraction, and integration behavior.

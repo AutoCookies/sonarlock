@@ -22,3 +22,11 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Fake scenario smoke (Linux)
+        if: runner.os == 'Linux'
+        run: ./build/sonarlock analyze --backend fake --scenario human --duration 3 --action soft
+
+      - name: Fake scenario smoke (Windows)
+        if: runner.os == 'Windows'
+        run: .\build\Release\sonarlock.exe analyze --backend fake --scenario human --duration 3 --action soft
