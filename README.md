@@ -1,6 +1,17 @@
-# SonarLock v1.0.0
+<h1>SonarLock</h1>
 
-Acoustic radar security prototype with deterministic fake-mode testing and safety-first action controls.
+<div align="center">
+  <img src="assets/logo.png" alt="SonarLock Logo" width="180"/>
+
+  
+
+  <p>Acoustic radar security prototype with deterministic fake-mode testing and safety-first action controls.</p>
+
+  [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/nnkfW83n)
+  ![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)
+  ![CMake](https://img.shields.io/badge/CMake-3.20+-064F8C?style=for-the-badge&logo=cmake&logoColor=white)
+  ![PortAudio](https://img.shields.io/badge/PortAudio-optional-lightgrey?style=for-the-badge)
+</div>
 
 ## Quick start (safe mode)
 
